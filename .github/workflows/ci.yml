@@ -1,69 +1,61 @@
 # .github/workflows/ci.yml
-name: Pipeline CI/CD EADL
+name: Pipeline CI/CD EADL - Core Validation
 
-# Déclenche le pipeline à chaque push ou pull request sur la branche main
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
-# Un "job" est un ensemble de tâches à exécuter
 jobs:
-  build_quality_security:
-    # Le pipeline s'exécutera sur une machine Ubuntu virtuelle
+  build_test_security:
     runs-on: ubuntu-latest
     
-    # Les étapes (steps) qui s'exécutent séquentiellement
     steps:
       - name: Checkout Code 🛎️
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (version 18) 💻
-        # L'application RWA a besoin de Node.js
+      - name: Setup Node.js (v18) 💻
         uses: actions/setup-node@v4
         with:
           node-version: '18' 
-          cache: 'yarn' # Pour accélérer l'installation des dépendances
+          cache: 'yarn' 
 
-      - name: Install dependencies (yarn install) 📦
-        # Installe tous les paquets du projet
+      - name: Install dependencies 📦
         run: yarn install
 
-      # --- À PARTIR D'ICI, NOUS AJOUTONS VOS OUTILS ---
+      # =======================================================
+      # 1. QUALITÉ ET SÉCURITÉ DU CODE
+      # =======================================================
 
-      - name: 1. Qualité du Code (Linting) 🔎
-        # Utilise le script 'types' pour la vérification du code
+      - name: 1. Qualité du Code (Linting & Types) 🔎
+        # Ce script vérifie le code TypeScript/JavaScript
         run: yarn types
 
       - name: 2. Sécurité des Dépendances (Yarn Audit) 🛡️
-        # Vérifie les vulnérabilités graves ou modérées
-        run: yarn audit --level moderate
-        
-      # --- À CONTINUER : TESTS ET SÉCURITÉ DYNAMIQUE ---
-      
-      - name: 3. Démarrer l'application RWA pour les tests E2E 🚦
-        # L'application doit tourner pour que Cypress et ZAP puissent la tester
-        # 'start-server-and-test' est une action très utile pour cela
-        uses: cypress-io/start-server-and-test@v1
+        # Détecte les vulnérabilités dans les librairies utilisées.
+        run: yarn audit --level moderate --groups dependencies
+
+      # =======================================================
+      # 2. TESTS E2E (CYPRESS)
+      # =======================================================
+
+      - name: 3. Démarrer l'application RWA en arrière-plan ⚙️
+        # L'application (frontend sur 3000, backend sur 3001) doit être active pour les tests E2E.
+        # 'start-server-and-test' est la meilleure méthode en CI.
+        uses: cypress-io/start-server-and-test@v1.23.1
         with:
-          start: yarn start # Commande pour lancer le frontend (3000) et le backend (3001)
-          wait-on: 'http://localhost:3000' # Attend que le frontend soit prêt
+          start: yarn start # La commande qui lance le front et le back
+          wait-on: 'http://localhost:3000' # Attend que cette URL réponde
           timeout: 120 # Donne 2 minutes pour démarrer
-          
-      - name: 4. Tests E2E avec Cypress 🧪
-        # Exécute tous les tests E2E et UI de l'application
+
+      - name: 4. Exécuter les Tests E2E avec Cypress 🧪
+        # Exécute tous les fichiers de tests (UI et API) en mode headless
         uses: cypress-io/github-action@v6
         with:
-          start: yarn start # Redémarrage au cas où l'étape d'avant ne passe pas, mais on peut l'omettre
-          wait-on: 'http://localhost:3000'
-          # La commande pour lancer les tests E2E
+          # On réutilise la commande de démarrage au cas où, mais le 'wait-on' est suffisant
           command: yarn cypress:run 
-          
-      # - name: 5. Scan de Sécurité avec ZAP Proxy 🚨
-      #   uses: zaproxy/action@v0.8.0
-      #   with:
-      #     target: 'http://localhost:3000' # Cible l'application en cours d'exécution
-      #     docker_name: 'owasp/zap2docker-stable'
-      #     rules_file: '.zap-rules'
-      #     cmd: 'zap-baseline.py' # Pour un scan de base
+          wait-on: 'http://localhost:3000'
+          # Pour mieux voir les résultats
+          browser: chrome
+          headless: true
